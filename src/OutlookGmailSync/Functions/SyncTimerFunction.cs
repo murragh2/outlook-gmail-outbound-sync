@@ -30,17 +30,32 @@ public class SyncTimerFunction
     [Function("SyncTimerFunction")]
     public async Task Run([TimerTrigger("%Sync:CronSchedule%")] TimerInfo timerInfo, CancellationToken ct)
     {
-        _logger.LogInformation("SyncTimerFunction triggered at: {Time}", DateTimeOffset.UtcNow);
+        var startTime = DateTimeOffset.UtcNow;
+        _logger.LogInformation("================================================================================");
+        _logger.LogInformation("[SYNC START] Outlook -> Gmail Sync Cycle Started at {Time} UTC", startTime);
+        _logger.LogInformation("================================================================================");
 
         try
         {
             var syncState = await _syncStateStore.GetStateAsync(ct) ?? new SyncState();
-            
+            bool isInitial = !syncState.IsInitialSyncComplete || string.IsNullOrEmpty(syncState.DeltaLink);
+
+            if (isInitial)
+            {
+                _logger.LogInformation("[SYNC MODE] Initial sync setup. Establishing initial delta watermark...");
+            }
+            else
+            {
+                _logger.LogInformation("[SYNC MODE] Incremental sync. Using existing delta link (Last sync: {LastSync})", syncState.LastSyncTime);
+            }
+
             var (messages, newDeltaLink) = await _mailReader.GetNewSentItemsAsync(syncState.DeltaLink, ct);
 
-            if (!syncState.IsInitialSyncComplete)
+            _logger.LogInformation("[GRAPH DELTA RESULT] Fetched {Count} new/modified message(s) from SentItems folder.", messages.Count);
+
+            if (isInitial)
             {
-                _logger.LogInformation("Initial sync. Found {Count} messages. Storing delta link and skipping forwarding.", messages.Count);
+                _logger.LogInformation("[INITIAL SYNC COMPLETE] Stored initial delta link. Skipping historical messages ({Count} items).", messages.Count);
                 syncState.IsInitialSyncComplete = true;
                 syncState.DeltaLink = newDeltaLink;
                 syncState.LastSyncTime = DateTimeOffset.UtcNow;
@@ -52,17 +67,26 @@ public class SyncTimerFunction
             int skippedDupes = 0;
             int skippedLoop = 0;
 
-            foreach (var message in messages)
+            for (int i = 0; i < messages.Count; i++)
             {
+                var message = messages[i];
                 var internetMessageId = message.InternetMessageId ?? message.Id;
-                if (string.IsNullOrEmpty(internetMessageId)) continue;
-                var subject = message.Subject ?? "No Subject";
+                if (string.IsNullOrEmpty(internetMessageId))
+                {
+                    _logger.LogWarning("[MSG #{Index}] Skipping message with null or empty ID.", i + 1);
+                    continue;
+                }
+
+                var subject = message.Subject ?? "(No Subject)";
                 var sentDateTime = message.SentDateTime ?? DateTimeOffset.UtcNow;
 
+                _logger.LogInformation("--- Processing [{Index}/{Total}] Subject: '{Subject}' | Sent: {SentTime} | MsgId: {MsgId} ---",
+                    i + 1, messages.Count, subject, sentDateTime, internetMessageId);
+
                 bool hasBeenForwarded = await _dedupService.HasBeenForwardedAsync(internetMessageId, sentDateTime, ct);
-                
                 if (hasBeenForwarded)
                 {
+                    _logger.LogInformation("[SKIP: DEDUPLICATED] MsgId '{MsgId}' was already forwarded. Skipping.", internetMessageId);
                     skippedDupes++;
                     continue;
                 }
@@ -72,10 +96,12 @@ public class SyncTimerFunction
                 if (wasForwarded)
                 {
                     await _dedupService.RecordForwardedAsync(internetMessageId, subject, sentDateTime, ct);
+                    _logger.LogInformation("[SUCCESS: FORWARDED] MsgId '{MsgId}' ('{Subject}') forwarded and recorded in dedup table.", internetMessageId, subject);
                     forwarded++;
                 }
                 else
                 {
+                    _logger.LogInformation("[SKIP: LOOP GUARD] MsgId '{MsgId}' contains target Gmail recipient. Skipping.", internetMessageId);
                     skippedLoop++;
                 }
             }
@@ -84,12 +110,15 @@ public class SyncTimerFunction
             syncState.LastSyncTime = DateTimeOffset.UtcNow;
             await _syncStateStore.SaveStateAsync(syncState, ct);
 
-            _logger.LogInformation("Sync completed. Found: {Count}, Forwarded: {Forwarded}, Skipped (Dupes): {SkippedDupes}, Skipped (Loop): {SkippedLoop}", 
-                messages.Count, forwarded, skippedDupes, skippedLoop);
+            var duration = DateTimeOffset.UtcNow - startTime;
+            _logger.LogInformation("================================================================================");
+            _logger.LogInformation("[SYNC SUMMARY] Duration: {Duration}s | Total Delta: {Total} | Forwarded: {Forwarded} | Skipped (Dupes): {Dupes} | Skipped (Loop Guard): {Loop}",
+                Math.Round(duration.TotalSeconds, 2), messages.Count, forwarded, skippedDupes, skippedLoop);
+            _logger.LogInformation("================================================================================");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "An error occurred during sync execution.");
+            _logger.LogError(ex, "[SYNC FAILED] An error occurred during sync cycle execution.");
             throw;
         }
     }

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Graph;
 using Microsoft.Graph.Models;
 using Microsoft.Kiota.Abstractions.Authentication;
@@ -13,10 +14,12 @@ public interface IOutlookMailReader
 public class OutlookMailReader : IOutlookMailReader
 {
     private readonly IGraphTokenService _tokenService;
+    private readonly ILogger<OutlookMailReader>? _logger;
 
-    public OutlookMailReader(IGraphTokenService tokenService)
+    public OutlookMailReader(IGraphTokenService tokenService, ILogger<OutlookMailReader>? logger = null)
     {
         _tokenService = tokenService;
+        _logger = logger;
     }
 
     public async Task<(IReadOnlyList<Message> Messages, string? NewDeltaLink)> GetNewSentItemsAsync(string? deltaLink, CancellationToken ct)
@@ -29,6 +32,7 @@ public class OutlookMailReader : IOutlookMailReader
         {
             if (string.IsNullOrEmpty(deltaLink))
             {
+                _logger?.LogInformation("[GRAPH READ] Requesting fresh delta token for SentItems folder...");
                 var response = await graphClient.Me.MailFolders["SentItems"].Messages.Delta.GetAsDeltaGetResponseAsync(requestConfiguration =>
                 {
                     requestConfiguration.QueryParameters.Select = new[] { "id", "internetMessageId", "subject", "sentDateTime", "toRecipients", "ccRecipients", "bccRecipients" };
@@ -38,6 +42,7 @@ public class OutlookMailReader : IOutlookMailReader
             }
             else
             {
+                _logger?.LogInformation("[GRAPH READ] Querying Graph SentItems delta endpoint with existing token...");
                 var response = await graphClient.Me.MailFolders["SentItems"].Messages.Delta.WithUrl(deltaLink).GetAsDeltaGetResponseAsync(requestConfiguration =>
                 {
                     requestConfiguration.QueryParameters.Select = new[] { "id", "internetMessageId", "subject", "sentDateTime", "toRecipients", "ccRecipients", "bccRecipients" };
@@ -48,6 +53,7 @@ public class OutlookMailReader : IOutlookMailReader
         }
         catch (Microsoft.Graph.Models.ODataErrors.ODataError ex) when (ex.ResponseStatusCode == 410)
         {
+            _logger?.LogWarning("[GRAPH READ] Delta token expired (HTTP 410 Gone). Re-establishing new delta link...");
             var response = await graphClient.Me.MailFolders["SentItems"].Messages.Delta.GetAsDeltaGetResponseAsync(requestConfiguration =>
             {
                 requestConfiguration.QueryParameters.Select = new[] { "id", "internetMessageId", "subject", "sentDateTime", "toRecipients", "ccRecipients", "bccRecipients" };
@@ -56,6 +62,7 @@ public class OutlookMailReader : IOutlookMailReader
             await PageThroughResults(graphClient, response, messages, (link) => nextDeltaLink = link, ct);
         }
 
+        _logger?.LogInformation("[GRAPH READ COMPLETE] Retrieved {Count} message(s). Has new DeltaLink: {HasLink}", messages.Count, !string.IsNullOrEmpty(nextDeltaLink));
         return (messages, nextDeltaLink);
     }
 
