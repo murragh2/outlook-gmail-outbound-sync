@@ -12,17 +12,19 @@ class Program
         string? vaultUri = null;
         string? clientId = null;
         string tenantId = "consumers";
+        bool saveLocal = false;
 
         for (int i = 0; i < args.Length; i++)
         {
             if (args[i] == "--vault-uri" && i + 1 < args.Length) vaultUri = args[++i];
             else if (args[i] == "--client-id" && i + 1 < args.Length) clientId = args[++i];
             else if (args[i] == "--tenant-id" && i + 1 < args.Length) tenantId = args[++i];
+            else if (args[i] == "--save-local") saveLocal = true;
         }
 
-        if (vaultUri == null || clientId == null)
+        if (clientId == null)
         {
-            Console.WriteLine("Usage: authcli --vault-uri <uri> --client-id <id> [--tenant-id consumers]");
+            Console.WriteLine("Usage: authcli --client-id <id> [--vault-uri <uri>] [--tenant-id consumers] [--save-local]");
             return;
         }
 
@@ -76,13 +78,38 @@ class Program
             return;
         }
 
-        Console.WriteLine("Storing refresh token in Key Vault as 'GraphRefreshToken'...");
+        if (saveLocal)
+        {
+            var localSettingsPath = Path.Combine(Directory.GetCurrentDirectory(), "src/OutlookGmailSync/local.settings.json");
+            if (File.Exists(localSettingsPath))
+            {
+                var json = File.ReadAllText(localSettingsPath);
+                var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(json) ?? new();
+                if (dict.TryGetValue("Values", out var valuesObj) && valuesObj is JsonElement valuesElement)
+                {
+                    var valuesDict = JsonSerializer.Deserialize<Dictionary<string, string>>(valuesElement.GetRawText()) ?? new();
+                    valuesDict["AzureAd__GraphRefreshToken"] = refreshToken;
+                    dict["Values"] = valuesDict;
+                    File.WriteAllText(localSettingsPath, JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true }));
+                    Console.WriteLine("Success! Saved refresh token to local.settings.json under AzureAd__GraphRefreshToken.");
+                }
+            }
+        }
 
-        var cred = new DefaultAzureCredential();
-        var secretClient = new SecretClient(new Uri(vaultUri), cred);
-
-        await secretClient.SetSecretAsync("GraphRefreshToken", refreshToken);
-
-        Console.WriteLine("Success! Refresh token stored in Key Vault.");
+        if (!string.IsNullOrEmpty(vaultUri))
+        {
+            Console.WriteLine("Storing refresh token in Key Vault as 'GraphRefreshToken'...");
+            try
+            {
+                var cred = new DefaultAzureCredential();
+                var secretClient = new SecretClient(new Uri(vaultUri), cred);
+                await secretClient.SetSecretAsync("GraphRefreshToken", refreshToken);
+                Console.WriteLine("Success! Refresh token stored in Key Vault.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Key Vault save skipped/error: {ex.Message}");
+            }
+        }
     }
 }

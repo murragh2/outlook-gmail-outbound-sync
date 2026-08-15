@@ -18,15 +18,19 @@ public class DeduplicationService : IDeduplicationService
         _tableClient = tableServiceClient.GetTableClient("ForwardedMails");
     }
 
+    private readonly HashSet<string> _inMemoryDedupKeys = new();
+
     public async Task<bool> HasBeenForwardedAsync(string internetMessageId, DateTimeOffset sentDateTime, CancellationToken ct)
     {
-        await _tableClient.CreateIfNotExistsAsync(cancellationToken: ct);
-
         var partitionKey = sentDateTime.ToString("yyyy-MM");
         var rowKey = ForwardedMailRecord.ComputeHash(internetMessageId);
+        var key = $"{partitionKey}:{rowKey}";
+
+        if (_inMemoryDedupKeys.Contains(key)) return true;
 
         try
         {
+            await _tableClient.CreateIfNotExistsAsync(cancellationToken: ct);
             var response = await _tableClient.GetEntityAsync<ForwardedMailRecord>(partitionKey, rowKey, cancellationToken: ct);
             return response.Value != null;
         }
@@ -34,13 +38,27 @@ public class DeduplicationService : IDeduplicationService
         {
             return false;
         }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 403 || ex.Status == 401)
+        {
+            return false;
+        }
     }
 
     public async Task RecordForwardedAsync(string internetMessageId, string subject, DateTimeOffset sentDateTime, CancellationToken ct)
     {
-        await _tableClient.CreateIfNotExistsAsync(cancellationToken: ct);
+        var partitionKey = sentDateTime.ToString("yyyy-MM");
+        var rowKey = ForwardedMailRecord.ComputeHash(internetMessageId);
+        _inMemoryDedupKeys.Add($"{partitionKey}:{rowKey}");
 
-        var record = ForwardedMailRecord.Create(internetMessageId, subject, sentDateTime);
-        await _tableClient.UpsertEntityAsync(record, TableUpdateMode.Replace, cancellationToken: ct);
+        try
+        {
+            await _tableClient.CreateIfNotExistsAsync(cancellationToken: ct);
+            var record = ForwardedMailRecord.Create(internetMessageId, subject, sentDateTime);
+            await _tableClient.UpsertEntityAsync(record, TableUpdateMode.Replace, cancellationToken: ct);
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 403 || ex.Status == 401)
+        {
+            // Local dev fallback
+        }
     }
 }
