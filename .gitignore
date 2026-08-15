@@ -3,6 +3,7 @@ bin/
 obj/
 publish/
 *.zip
+tests/func-*.log
 .vs/
 *.user
 local.settings.json
