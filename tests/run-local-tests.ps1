@@ -10,9 +10,21 @@ Write-Host "====================================================================
 Write-Host "[LOCAL TEST HARNESS] Starting Azure Functions Local E2E Test Suite" -ForegroundColor Cyan
 Write-Host "================================================================================" -ForegroundColor Cyan
 
-if (-not (Test-Path $localSettingsPath)) {
-    Write-Host "[WARNING] local.settings.json not found in $projectDir." -ForegroundColor Yellow
+# Pre-flight check: Verify local access token is present in .NET User Secrets
+Write-Host "[PRE-FLIGHT] Checking for local Graph Access Token in .NET User Secrets..." -ForegroundColor Green
+$secretsOutput = & dotnet user-secrets list --project $projectDir 2>&1 | Out-String
+
+if ($secretsOutput -notmatch "AzureAd:GraphAccessToken" -or $secretsOutput -match "No secrets configured") {
+    Write-Host "================================================================================" -ForegroundColor Red
+    Write-Host "[INVALID SETUP ❌] Local Graph Access Token is missing from .NET User Secrets." -ForegroundColor Red
+    Write-Host "================================================================================" -ForegroundColor Red
+    Write-Host "Please acquire a fresh 1-hour access token by running:" -ForegroundColor Yellow
+    Write-Host "  dotnet run --project src/OutlookGmailSync.AuthCli -- --client-id 06d76858-fa3e-48c2-8b98-3f3d167efa6b --save-local" -ForegroundColor White
+    Write-Host "================================================================================" -ForegroundColor Red
+    exit 1
 }
+
+Write-Host " -> Pre-flight check passed: Local Graph Access Token is configured." -ForegroundColor Green
 
 # Clear previous log files
 if (Test-Path $stdoutPath) { Remove-Item -Path $stdoutPath -Force }
