@@ -70,7 +70,7 @@ resource functionApp 'Microsoft.Web/sites@2022-09-01' = {
         }
         {
           name: 'Sync__CronSchedule'
-          value: '0 */10 * * * *'
+          value: '*/30 * * * * *'
         }
         {
           name: 'Storage__AccountUri'
