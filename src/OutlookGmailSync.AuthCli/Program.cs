@@ -80,19 +80,25 @@ class Program
 
         if (saveLocal)
         {
-            var localSettingsPath = Path.Combine(Directory.GetCurrentDirectory(), "src/OutlookGmailSync/local.settings.json");
-            if (File.Exists(localSettingsPath))
+            Console.WriteLine("Saving refresh token securely to .NET User Secrets (%APPDATA%\\Microsoft\\UserSecrets\\)...");
+            var psi = new System.Diagnostics.ProcessStartInfo
             {
-                var json = File.ReadAllText(localSettingsPath);
-                var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(json) ?? new();
-                if (dict.TryGetValue("Values", out var valuesObj) && valuesObj is JsonElement valuesElement)
-                {
-                    var valuesDict = JsonSerializer.Deserialize<Dictionary<string, string>>(valuesElement.GetRawText()) ?? new();
-                    valuesDict["AzureAd__GraphRefreshToken"] = refreshToken;
-                    dict["Values"] = valuesDict;
-                    File.WriteAllText(localSettingsPath, JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true }));
-                    Console.WriteLine("Success! Saved refresh token to local.settings.json under AzureAd__GraphRefreshToken.");
-                }
+                FileName = "dotnet",
+                Arguments = $"user-secrets set \"AzureAd:GraphRefreshToken\" \"{refreshToken}\" --project src/OutlookGmailSync",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+            };
+            var proc = System.Diagnostics.Process.Start(psi);
+            proc?.WaitForExit();
+            if (proc?.ExitCode == 0)
+            {
+                Console.WriteLine("Success! Saved refresh token securely to .NET User Secrets store (outside git repository).");
+            }
+            else
+            {
+                var err = proc?.StandardError.ReadToEnd();
+                Console.WriteLine($"Warning: Failed to set user secrets: {err}");
             }
         }
 
