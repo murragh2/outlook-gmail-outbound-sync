@@ -33,12 +33,16 @@ class Program
             .WithRedirectUri("http://localhost:8400")
             .Build();
 
-        Console.WriteLine("Acquiring token interactively...");
+        Console.WriteLine("Acquiring token via device code...");
 
         AuthenticationResult result;
         try
         {
-            result = await app.AcquireTokenInteractive(scopes).ExecuteAsync();
+            result = await app.AcquireTokenWithDeviceCode(scopes, deviceCodeResult =>
+            {
+                Console.WriteLine(deviceCodeResult.Message);
+                return Task.CompletedTask;
+            }).ExecuteAsync();
         }
         catch (MsalException ex)
         {

@@ -7,13 +7,14 @@ on:
     paths-ignore:
       - '**.md'
       - '.gitignore'
+  workflow_dispatch:
 
 permissions:
   id-token: write
   contents: read
 
 env:
-  AZURE_RESOURCE_GROUP: rg-outlook-gmail-sync
+  AZURE_RESOURCE_GROUP: rg-outlook-gmail-sync-centralus
   AZURE_FUNCTIONAPP_NAME: func-ogms
 
 jobs:
@@ -50,6 +51,7 @@ jobs:
       - name: Deploy Bicep
         id: bicep
         run: |
+          az group create --name ${{ env.AZURE_RESOURCE_GROUP }} --location centralus
           az deployment group create \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --template-file infra/main.bicep \
