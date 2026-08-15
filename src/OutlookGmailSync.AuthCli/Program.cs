@@ -28,7 +28,9 @@ class Program
             return;
         }
 
-        var scopes = new[] { "Mail.Read", "Mail.Send", "offline_access" };
+        var scopes = saveLocal 
+            ? new[] { "Mail.Read", "Mail.Send" } 
+            : new[] { "Mail.Read", "Mail.Send", "offline_access" };
 
         var app = PublicClientApplicationBuilder.Create(clientId)
             .WithTenantId(tenantId)
