@@ -13,6 +13,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{9465186F
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OutlookGmailSync.Tests", "tests\OutlookGmailSync.Tests\OutlookGmailSync.Tests.csproj", "{0307590A-931F-4389-BCD4-7973FB26ECA0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OutlookGmailSync.TestRunner", "src\OutlookGmailSync.TestRunner\OutlookGmailSync.TestRunner.csproj", "{13C2708C-64C1-4716-9BD9-8E9787A19C33}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -34,10 +36,15 @@ Global
 		{0307590A-931F-4389-BCD4-7973FB26ECA0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0307590A-931F-4389-BCD4-7973FB26ECA0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{0307590A-931F-4389-BCD4-7973FB26ECA0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{13C2708C-64C1-4716-9BD9-8E9787A19C33}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{13C2708C-64C1-4716-9BD9-8E9787A19C33}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{13C2708C-64C1-4716-9BD9-8E9787A19C33}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{13C2708C-64C1-4716-9BD9-8E9787A19C33}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{A6EF6863-41FE-4F6C-A202-E8802C6DC33B} = {4BEA924F-630B-4E0C-8158-C4F3933FDA0F}
 		{8606AB6A-C1AD-4506-A37D-71E077E9393D} = {4BEA924F-630B-4E0C-8158-C4F3933FDA0F}
 		{0307590A-931F-4389-BCD4-7973FB26ECA0} = {9465186F-0136-414B-B1D6-4B51C310CA5C}
+		{13C2708C-64C1-4716-9BD9-8E9787A19C33} = {4BEA924F-630B-4E0C-8158-C4F3933FDA0F}
 	EndGlobalSection
 EndGlobal

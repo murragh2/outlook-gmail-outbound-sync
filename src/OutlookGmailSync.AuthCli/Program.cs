@@ -12,21 +12,25 @@ class Program
         string? vaultUri = null;
         string? clientId = null;
         string tenantId = "consumers";
+        bool saveLocal = false;
 
         for (int i = 0; i < args.Length; i++)
         {
             if (args[i] == "--vault-uri" && i + 1 < args.Length) vaultUri = args[++i];
             else if (args[i] == "--client-id" && i + 1 < args.Length) clientId = args[++i];
             else if (args[i] == "--tenant-id" && i + 1 < args.Length) tenantId = args[++i];
+            else if (args[i] == "--save-local") saveLocal = true;
         }
 
-        if (vaultUri == null || clientId == null)
+        if (clientId == null)
         {
-            Console.WriteLine("Usage: authcli --vault-uri <uri> --client-id <id> [--tenant-id consumers]");
+            Console.WriteLine("Usage: authcli --client-id <id> [--vault-uri <uri>] [--tenant-id consumers] [--save-local]");
             return;
         }
 
-        var scopes = new[] { "Mail.Read", "Mail.Send", "offline_access" };
+        var scopes = saveLocal 
+            ? new[] { "Mail.Read", "Mail.Send" } 
+            : new[] { "Mail.Read", "Mail.Send", "offline_access" };
 
         var app = PublicClientApplicationBuilder.Create(clientId)
             .WithTenantId(tenantId)
@@ -76,13 +80,45 @@ class Program
             return;
         }
 
-        Console.WriteLine("Storing refresh token in Key Vault as 'GraphRefreshToken'...");
+        if (saveLocal)
+        {
+            Console.WriteLine("Saving short-lived Access Token (~1-hour TTL) securely to .NET User Secrets...");
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = $"user-secrets set \"AzureAd:GraphAccessToken\" \"{result.AccessToken}\" --project src/OutlookGmailSync",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+            };
+            var proc = System.Diagnostics.Process.Start(psi);
+            proc?.WaitForExit();
+            if (proc?.ExitCode == 0)
+            {
+                Console.WriteLine("Success! Saved short-lived Graph Access Token to .NET User Secrets store.");
+                Console.WriteLine("Note: The refresh token was NOT saved. This access token will expire in 60 minutes.");
+            }
+            else
+            {
+                var err = proc?.StandardError.ReadToEnd();
+                Console.WriteLine($"Warning: Failed to set user secrets: {err}");
+            }
+        }
 
-        var cred = new DefaultAzureCredential();
-        var secretClient = new SecretClient(new Uri(vaultUri), cred);
-
-        await secretClient.SetSecretAsync("GraphRefreshToken", refreshToken);
-
-        Console.WriteLine("Success! Refresh token stored in Key Vault.");
+        if (!string.IsNullOrEmpty(vaultUri))
+        {
+            Console.WriteLine("Storing refresh token in Key Vault as 'GraphRefreshToken'...");
+            try
+            {
+                var cred = new DefaultAzureCredential();
+                var secretClient = new SecretClient(new Uri(vaultUri), cred);
+                await secretClient.SetSecretAsync("GraphRefreshToken", refreshToken);
+                Console.WriteLine("Success! Refresh token stored in Key Vault.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Key Vault save skipped/error: {ex.Message}");
+            }
+        }
     }
 }

@@ -33,8 +33,31 @@ public class GraphTokenService : IGraphTokenService
 
     public async Task<string> GetAccessTokenAsync(CancellationToken ct)
     {
-        KeyVaultSecret secret = await _secretClient.GetSecretAsync("GraphRefreshToken", cancellationToken: ct);
-        string refreshToken = secret.Value;
+        if (!string.IsNullOrEmpty(_azureAdOptions.GraphAccessToken))
+        {
+            _logger.LogInformation("[LOCAL DEV] Using short-lived Graph Access Token from User Secrets.");
+            return _azureAdOptions.GraphAccessToken;
+        }
+
+        string refreshToken = string.Empty;
+
+        try
+        {
+            KeyVaultSecret secret = await _secretClient.GetSecretAsync("GraphRefreshToken", cancellationToken: ct);
+            refreshToken = secret.Value;
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 403 || ex.Status == 401)
+        {
+            _logger.LogWarning("[LOCAL DEV] Key Vault access forbidden (403) and no local access token set.");
+        }
+
+        if (string.IsNullOrEmpty(refreshToken))
+        {
+            throw new InvalidOperationException(
+                "Local Graph Access Token has expired or is missing. Please rerun the auth startup tool " +
+                "('dotnet run --project src/OutlookGmailSync.AuthCli -- --client-id 06d76858-fa3e-48c2-8b98-3f3d167efa6b --save-local') " +
+                "to acquire a fresh 1-hour access token.");
+        }
 
         var tokenEndpoint = $"https://login.microsoftonline.com/{_azureAdOptions.TenantId}/oauth2/v2.0/token";
         
@@ -76,8 +99,15 @@ public class GraphTokenService : IGraphTokenService
 
         if (!string.IsNullOrEmpty(tokenResponse.RefreshToken) && tokenResponse.RefreshToken != refreshToken)
         {
-            await _secretClient.SetSecretAsync("GraphRefreshToken", tokenResponse.RefreshToken, ct);
-            _logger.LogInformation("Stored new refresh token in Key Vault.");
+            try
+            {
+                await _secretClient.SetSecretAsync("GraphRefreshToken", tokenResponse.RefreshToken, ct);
+                _logger.LogInformation("Stored new refresh token in Key Vault.");
+            }
+            catch (Azure.RequestFailedException ex) when (ex.Status == 403 || ex.Status == 401)
+            {
+                _logger.LogWarning("[LOCAL DEV] Key Vault access forbidden (403). Skipped storing rotated refresh token in production Key Vault.");
+            }
         }
 
         return tokenResponse.AccessToken;

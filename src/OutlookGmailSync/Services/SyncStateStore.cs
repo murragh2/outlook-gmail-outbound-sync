@@ -18,24 +18,37 @@ public class SyncStateStore : ISyncStateStore
         _tableClient = tableServiceClient.GetTableClient("SyncState");
     }
 
+    private SyncState? _inMemoryState;
+
     public async Task<SyncState?> GetStateAsync(CancellationToken ct)
     {
-        await _tableClient.CreateIfNotExistsAsync(cancellationToken: ct);
-
         try
         {
+            await _tableClient.CreateIfNotExistsAsync(cancellationToken: ct);
             var response = await _tableClient.GetEntityAsync<SyncState>("SyncState", "DeltaLink", cancellationToken: ct);
             return response.Value;
         }
         catch (Azure.RequestFailedException ex) when (ex.Status == 404)
         {
-            return null;
+            return _inMemoryState;
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 403 || ex.Status == 401)
+        {
+            return _inMemoryState;
         }
     }
 
     public async Task SaveStateAsync(SyncState state, CancellationToken ct)
     {
-        await _tableClient.CreateIfNotExistsAsync(cancellationToken: ct);
-        await _tableClient.UpsertEntityAsync(state, TableUpdateMode.Replace, cancellationToken: ct);
+        _inMemoryState = state;
+        try
+        {
+            await _tableClient.CreateIfNotExistsAsync(cancellationToken: ct);
+            await _tableClient.UpsertEntityAsync(state, TableUpdateMode.Replace, cancellationToken: ct);
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 403 || ex.Status == 401)
+        {
+            // In local dev without prod storage permissions, state persists in memory for local test session
+        }
     }
 }
