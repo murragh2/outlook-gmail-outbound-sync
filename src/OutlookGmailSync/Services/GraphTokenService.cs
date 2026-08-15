@@ -33,8 +33,22 @@ public class GraphTokenService : IGraphTokenService
 
     public async Task<string> GetAccessTokenAsync(CancellationToken ct)
     {
-        KeyVaultSecret secret = await _secretClient.GetSecretAsync("GraphRefreshToken", cancellationToken: ct);
-        string refreshToken = secret.Value;
+        string refreshToken = _azureAdOptions.GraphRefreshToken;
+
+        try
+        {
+            KeyVaultSecret secret = await _secretClient.GetSecretAsync("GraphRefreshToken", cancellationToken: ct);
+            refreshToken = secret.Value;
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 403 || ex.Status == 401)
+        {
+            _logger.LogWarning("[LOCAL DEV] Key Vault access forbidden (403). Using local configuration token fallback.");
+        }
+
+        if (string.IsNullOrEmpty(refreshToken))
+        {
+            throw new InvalidOperationException("No refresh token available from Key Vault or local configuration.");
+        }
 
         var tokenEndpoint = $"https://login.microsoftonline.com/{_azureAdOptions.TenantId}/oauth2/v2.0/token";
         
@@ -76,8 +90,15 @@ public class GraphTokenService : IGraphTokenService
 
         if (!string.IsNullOrEmpty(tokenResponse.RefreshToken) && tokenResponse.RefreshToken != refreshToken)
         {
-            await _secretClient.SetSecretAsync("GraphRefreshToken", tokenResponse.RefreshToken, ct);
-            _logger.LogInformation("Stored new refresh token in Key Vault.");
+            try
+            {
+                await _secretClient.SetSecretAsync("GraphRefreshToken", tokenResponse.RefreshToken, ct);
+                _logger.LogInformation("Stored new refresh token in Key Vault.");
+            }
+            catch (Azure.RequestFailedException ex) when (ex.Status == 403 || ex.Status == 401)
+            {
+                _logger.LogWarning("[LOCAL DEV] Key Vault access forbidden (403). Skipped storing rotated refresh token in production Key Vault.");
+            }
         }
 
         return tokenResponse.AccessToken;
