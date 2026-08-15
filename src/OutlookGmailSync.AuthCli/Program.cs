@@ -80,11 +80,11 @@ class Program
 
         if (saveLocal)
         {
-            Console.WriteLine("Saving refresh token securely to .NET User Secrets (%APPDATA%\\Microsoft\\UserSecrets\\)...");
+            Console.WriteLine("Saving short-lived Access Token (~1-hour TTL) securely to .NET User Secrets...");
             var psi = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = "dotnet",
-                Arguments = $"user-secrets set \"AzureAd:GraphRefreshToken\" \"{refreshToken}\" --project src/OutlookGmailSync",
+                Arguments = $"user-secrets set \"AzureAd:GraphAccessToken\" \"{result.AccessToken}\" --project src/OutlookGmailSync",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false
@@ -93,7 +93,8 @@ class Program
             proc?.WaitForExit();
             if (proc?.ExitCode == 0)
             {
-                Console.WriteLine("Success! Saved refresh token securely to .NET User Secrets store (outside git repository).");
+                Console.WriteLine("Success! Saved short-lived Graph Access Token to .NET User Secrets store.");
+                Console.WriteLine("Note: The refresh token was NOT saved. This access token will expire in 60 minutes.");
             }
             else
             {
